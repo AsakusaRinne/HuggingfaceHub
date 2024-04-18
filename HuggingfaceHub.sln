@@ -1,0 +1,28 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HuggingfaceHub", "HuggingfaceHub\HuggingfaceHub.csproj", "{35CD7203-2B29-4455-BBED-95109E7427EF}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HuggingfaceHub.Examples", "HuggingfaceHub.Examples\HuggingfaceHub.Examples.csproj", "{396F4E49-92E2-4E8E-B91A-8CDC32A38B33}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{35CD7203-2B29-4455-BBED-95109E7427EF}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{35CD7203-2B29-4455-BBED-95109E7427EF}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{35CD7203-2B29-4455-BBED-95109E7427EF}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{35CD7203-2B29-4455-BBED-95109E7427EF}.Release|Any CPU.Build.0 = Release|Any CPU
+		{396F4E49-92E2-4E8E-B91A-8CDC32A38B33}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{396F4E49-92E2-4E8E-B91A-8CDC32A38B33}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{396F4E49-92E2-4E8E-B91A-8CDC32A38B33}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{396F4E49-92E2-4E8E-B91A-8CDC32A38B33}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal
