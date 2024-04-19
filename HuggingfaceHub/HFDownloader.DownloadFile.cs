@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using System.Diagnostics;
+using System.Collections.Concurrent;
 using Huggingface.Common;
 using Microsoft.Extensions.Logging;
 
@@ -11,7 +12,9 @@ namespace Huggingface
         private static readonly Dictionary<string, bool> _symlinksSupportedInDir = new Dictionary<string, bool>();
 
         /// <summary>
-        /// Download a given file if it's not already present in the local cache.
+        /// Download a given file if it's not already present in the local cache. 
+        /// It adopts from https://github.com/huggingface/huggingface_hub/blob/v0.22.2/src/huggingface_hub/file_download.py#L1014.
+        /// 
         /// </summary>
         /// <param name="repoId">A user or an organization name and a repo name separated by a `/`.</param>
         /// <param name="filename">The name of the file in the repo.</param>
@@ -42,12 +45,13 @@ namespace Huggingface
         /// If `True`, avoid downloading the file and return the path to the local cached file if it exists.
         /// </param>
         /// <param name="endpoint">If set, replace the default endpoint with this value.</param>
+        /// <param name="progress">A callback used to show progress.</param>
         /// <returns></returns>
-        public async static Task<string> DownloadFile(string repoId, string filename, string? subfolder = null, 
+        public static async Task<string> DownloadFileAsync(string repoId, string filename, string? subfolder = null, 
             string? revision = null, string? cacheDir = null, string? localDir = null, 
             bool? localDirUseSymlinks = null, IDictionary<string, string>? userAgent = null, bool forceDownload = false, 
             string? proxy = null, int etagTimeout = -1, string? token = null, bool localFilesOnly = false, 
-            string? endpoint = null)
+            string? endpoint = null, IProgress<float>? progress = null)
         { 
             if(etagTimeout == -1){
                 etagTimeout = HFGlobalConfig.DefaultEtagTimeout;
@@ -192,7 +196,8 @@ namespace Huggingface
             // In that case store a ref.
             CacheCommitHashForSpecificVersion(storageFolder, revision, commitHash);
 
-            if(File.Exists(pointerPath) && !forceDownload){
+            if(File.Exists(pointerPath) && !forceDownload)
+            {
                 if(localDir is not null){
                     return ToLocalDir(pointerPath, localDir, relativeFilename, localDirUseSymlinks);
                 }
@@ -252,27 +257,47 @@ namespace Huggingface
                 }
 
                 // download the file
-                System.Net.Http.HttpClient client = HttpClient;
+                var handler = new HttpClientHandler();
                 if(proxy is not null){
-                    var handler = new HttpClientHandler();
-                    if(proxy is not null){
-                        handler.Proxy = new System.Net.WebProxy(proxy);
-                        handler.UseProxy = true;
-                    }
-                    client = new System.Net.Http.HttpClient(handler);
+                    handler.Proxy = new System.Net.WebProxy(proxy);
+                    handler.UseProxy = true;
                 }
-
+                handler.AllowAutoRedirect = true;
+                handler.MaxAutomaticRedirections = 30;
+                handler.UseCookies = true;
+                
+                var client = new System.Net.Http.HttpClient(handler);
+                client.Timeout = TimeSpan.FromSeconds(etagTimeout);
+                
+                uriToDownload = new Uri(
+                    "https://cdn-lfs-us-1.hf-mirror.com/repos/ea/97/ea977a9e305f5c588e951a1d21890912ca7f717791542be17f8d8af1b29bb751/de0b0d5814764dcf7b8363c0c18aee9f51045ac8f3265b1d44a3bbfe0bd0bf12?response-content-disposition=attachment%3B+filename*%3DUTF-8%27%27pytorch_model.bin%3B+filename%3D%22pytorch_model.bin%22%3B&response-content-type=application%2Foctet-stream&Expires=1713812955&Policy=eyJTdGF0ZW1lbnQiOlt7IkNvbmRpdGlvbiI6eyJEYXRlTGVzc1RoYW4iOnsiQVdTOkVwb2NoVGltZSI6MTcxMzgxMjk1NX19LCJSZXNvdXJjZSI6Imh0dHBzOi8vY2RuLWxmcy11cy0xLmh1Z2dpbmdmYWNlLmNvL3JlcG9zL2VhLzk3L2VhOTc3YTllMzA1ZjVjNTg4ZTk1MWExZDIxODkwOTEyY2E3ZjcxNzc5MTU0MmJlMTdmOGQ4YWYxYjI5YmI3NTEvZGUwYjBkNTgxNDc2NGRjZjdiODM2M2MwYzE4YWVlOWY1MTA0NWFjOGYzMjY1YjFkNDRhM2JiZmUwYmQwYmYxMj9yZXNwb25zZS1jb250ZW50LWRpc3Bvc2l0aW9uPSomcmVzcG9uc2UtY29udGVudC10eXBlPSoifV19&Signature=fpmNACaWLQKhZxMoHHsLzsAUm3%7E52LVWfPTl3zmYuF9l%7EhRObn169YtB1GZh814qm%7Ego%7Ezx7VqKoqUuIWQfR8gwoR7jTF%7EDcW6Q4GMArJoqrK7MWvZ7VFdsCqjAdPULV02MAyZGXljWuKOXZ5CKH61FR8IWddq9okqfLWTJTgqKfrGwfzJqrkEEN2SO35hHmnwTcyEG0hk0TR-gwMaUIFRnaFarzIzRYX7u2MToJUHguuB1RCDRvP4DJk0IQ2Reszb5xrSPaGioG50kjN%7EDna2Nn6hnWGZQRJA5Ugn1gSSL7%7EnHHY9hXdxitRsnC%7EMyVqEuwdpBI4B6M-6M02--OCQ__&Key-Pair-Id=KCD77M1F0VK2B");
                 using (var request = new HttpRequestMessage(HttpMethod.Get, uriToDownload)){
+                    Utils.AddDefaultHeaders(request.Headers);
                     foreach(var k in headers.Keys){
-                        request.Headers.Add(k, headers[k]);
+                        // request.Headers.TryAddWithoutValidation(k, headers[k]);
+                        request.Headers.TryAddWithoutValidation("User-Agent", new string[]{"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"});
                     }
-                    using (var response = await client.SendAsync(request)){
+                    using (var response = await Utils.HttpRequestWrapperAsync(client, request, false, true)){
                         response.EnsureSuccessStatusCode();
+                        Debug.Assert(response.Headers.TryGetValues("Content-Length", out var lengths));
+                        Debug.Assert(lengths is not null && lengths!.Count() > 0);
+                        var totalFileLengths = int.Parse(lengths!.FirstOrDefault());
+                        var chunkSize = Math.Max(HFGlobalConfig.MinFileDownloadChunkSize, totalFileLengths / 100);
                         using (var responseStream = await response.Content.ReadAsStreamAsync())
                         using (var stream = new FileStream(tempFilePath, FileMode.Create, FileAccess.Write, FileShare.None))
                         {
-                            await responseStream.CopyToAsync(stream);
+                            byte[] buffer = new byte[chunkSize];
+                            int bytesRead;
+                            long totalRead = 0;
+
+                            while ((bytesRead = await responseStream.ReadAsync(buffer, 0, chunkSize)) > 0)
+                            {
+                                await stream.WriteAsync(buffer, 0, bytesRead);
+                                totalRead += bytesRead;
+                                progress?.Report((float)totalRead / totalFileLengths);
+                            }
                         }
+                        Console.WriteLine("Download completed!!");
                     }
                 }
 
@@ -320,24 +345,19 @@ namespace Huggingface
         /// <param name="timeout"></param>
         /// <param name="userAgent"></param>
         /// <returns></returns>
-        public async static Task<HfFileMetadata> GetHfFileMetadata(Uri uri, string? token = null, string? proxy = null, 
+        public static async Task<HfFileMetadata> GetHfFileMetadata(Uri uri, string? token = null, string? proxy = null, 
             int timeout = -1, IDictionary<string, string>? userAgent = null){
             var headers = BuildHFHeaders(token, userAgent: userAgent);
             headers["Accept-Encoding"] = "identity"; // prevent any compression => we want to know the real size of the file
 
-            System.Net.Http.HttpClient client;
-            if(timeout == -1 && proxy is null){
-                client = HttpClient;
+            var handler = new HttpClientHandler();
+            handler.AllowAutoRedirect = false;
+            if(proxy is not null){
+                handler.Proxy = new System.Net.WebProxy(proxy);
+                handler.UseProxy = true;
             }
-            else{
-                var handler = new HttpClientHandler();
-                if(proxy is not null){
-                    handler.Proxy = new System.Net.WebProxy(proxy);
-                    handler.UseProxy = true;
-                }
-                client = new System.Net.Http.HttpClient(handler);
-                client.Timeout = timeout == -1 ? TimeSpan.FromSeconds(HFGlobalConfig.DefaultEtagTimeout) : TimeSpan.FromSeconds(timeout);
-            }
+            var client = new System.Net.Http.HttpClient(handler);
+            client.Timeout = timeout == -1 ? TimeSpan.FromSeconds(HFGlobalConfig.DefaultEtagTimeout) : TimeSpan.FromSeconds(timeout);
 
             string? commitHash = null;
             System.Net.Http.Headers.EntityTagHeaderValue? etag = null;
@@ -345,12 +365,12 @@ namespace Huggingface
             int? size = null;
 
             using(var request = new HttpRequestMessage(HttpMethod.Head, uri)){
-                foreach(var header in headers){
-                    request.Headers.Add(header.Key, header.Value);
+                foreach(var header in headers)
+                {
+                    request.Headers.TryAddWithoutValidation(header.Key, header.Value);
                 }
 
-                var response = await client.SendAsync(request);
-                response.EnsureSuccessStatusCode();
+                var response = await Utils.HttpRequestWrapperAsync(client, request, true);
                 Debug.Assert(response.Headers is not null);
 
                 response.Headers.TryGetValues(HFGlobalConfig.HUGGINGFACE_HEADER_X_REPO_COMMIT, out var commitHashes);

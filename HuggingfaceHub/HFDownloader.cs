@@ -6,7 +6,7 @@ namespace Huggingface
 {
     public static partial class HFDownloader
     {
-        public static HttpClient HttpClient { get; set; }
+        private static HttpClient HttpClient { get; set; }
 
         public static ILogger? Logger { get; set; }
 
@@ -22,7 +22,7 @@ namespace Huggingface
             // If you're not in Windows, default handler can be used.
             HttpClientHandler handler = new HttpClientHandler();
 #endif
-            HttpClient = new HttpClient();
+            HttpClient = new HttpClient(handler);
         }
 
         private static string GetFileUrl(string repoId, string revision, string filename, string? endpoint = null)
@@ -53,12 +53,36 @@ namespace Huggingface
         /// <param name="userAgent"></param>
         private static IDictionary<string, string> BuildHFHeaders(string? token = null, bool isWriteAction = false, IDictionary<string, string>? userAgent = null)
         {
+            Dictionary<string, string> headers = new();
+            userAgent ??= new Dictionary<string, string>();
+            headers["user-agent"] = GetHttpUserAgentStr(userAgent);
             if(token is not null){
-                throw new NotImplementedException("Token support is not implemented yet");
+                var tokenToSend = token;
+                ValidateTokenToSend(tokenToSend, isWriteAction);
+                headers["authorization"] = $"Bearer {tokenToSend}";
             }
 
-            // TODO: verify the implementations and complete it
-            return userAgent ?? new Dictionary<string, string>();
+            return headers;
+        }
+
+        private static string GetHttpUserAgentStr(IDictionary<string, string> userAgent){
+            string res = "unknown/None";
+            res += ";" + string.Join(";", userAgent.Select(kv => $"{kv.Key}/{kv.Value}").ToArray());
+            return res;
+        }
+
+        private static string GetTokenToSend(string token){
+            // TODO: deal with token cache here.
+            return token;
+        }
+
+        private static void ValidateTokenToSend(string token, bool isWriteAction) { 
+            if(isWriteAction){
+                if(token.StartsWith("api_org")){
+                    throw new ArgumentException("You must use your personal account token for write-access methods. To " +
+                    " generate a write-access token, go to  https://huggingface.co/settings/tokens");
+                }
+            }
         }
     }
 }

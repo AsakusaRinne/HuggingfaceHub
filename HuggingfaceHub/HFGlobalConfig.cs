@@ -30,6 +30,11 @@ namespace Huggingface
         public static int DefaultDownloadTimeout { get; set; } = 10;
 
         public static int DefaultRequestTimeout { get; set; } = 10;
+        
+        /// <summary>
+        /// The minimum chunk size when downloading the file.
+        /// </summary>
+        public static int MinFileDownloadChunkSize { get; set; } = 4096;
 
         /// <summary>
         /// Used if download to `localDir` and `localDirUseSymlinks=null`
