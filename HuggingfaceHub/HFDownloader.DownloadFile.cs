@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Collections.Concurrent;
 using Huggingface.Common;
 using Microsoft.Extensions.Logging;
+using System.IO;
 
 namespace Huggingface
 {
@@ -44,14 +45,15 @@ namespace Huggingface
         /// <param name="localFilesOnly">
         /// If `True`, avoid downloading the file and return the path to the local cached file if it exists.
         /// </param>
+        /// <param name="resumeDownload">If `true`, resume a previously interrupted download.</param>
         /// <param name="endpoint">If set, replace the default endpoint with this value.</param>
-        /// <param name="progress">A callback used to show progress.</param>
+        /// <param name="progress">A callback used to show progress, which is passed a value from 0 to 100.</param>
         /// <returns></returns>
         public static async Task<string> DownloadFileAsync(string repoId, string filename, string? subfolder = null, 
             string? revision = null, string? cacheDir = null, string? localDir = null, 
             bool? localDirUseSymlinks = null, IDictionary<string, string>? userAgent = null, bool forceDownload = false, 
             string? proxy = null, int etagTimeout = -1, string? token = null, bool localFilesOnly = false, 
-            string? endpoint = null, IProgress<float>? progress = null)
+            bool resumeDownload = false, string? endpoint = null, IProgress<int>? progress = null)
         { 
             if(etagTimeout == -1){
                 etagTimeout = HFGlobalConfig.DefaultEtagTimeout;
@@ -104,7 +106,7 @@ namespace Huggingface
             var headers = BuildHFHeaders(token, userAgent: userAgent);
             System.Net.Http.Headers.EntityTagHeaderValue? etag = null;
             string? commitHash = null;
-            int? expectedSize = null;
+            long? expectedSize = null;
 
             if(!localFilesOnly){
                 var metadata = await GetHfFileMetadata(uriToDownload, token, proxy, etagTimeout, userAgent);
@@ -186,27 +188,30 @@ namespace Huggingface
             // From now on, etag and commit_hash are not None.
             Debug.Assert(etag is not null, "etag must have been retrieved from server");
             Debug.Assert(commitHash is not null, "commit_hash must have been retrieved from server");
-            var blobPath = Path.Combine(storageFolder, "blobs", etag.Tag.Trim('\"'));
-            pointerPath = GetPointerPath(storageFolder, commitHash, relativeFilename);
+            Debug.Assert(relativeFilename is not null);
+            Debug.Assert(commitHash is not null);
+            Debug.Assert(storageFolder is not null);
+            var blobPath = Path.Combine(storageFolder!, "blobs", etag!.Tag.Trim('\"'));
+            pointerPath = GetPointerPath(storageFolder!, commitHash!, relativeFilename!);
 
             Directory.CreateDirectory(Path.GetDirectoryName(blobPath)!);
             Directory.CreateDirectory(Path.GetDirectoryName(pointerPath)!);
             // if passed revision is not identical to commit_hash
             // then revision has to be a branch name or tag name.
             // In that case store a ref.
-            CacheCommitHashForSpecificVersion(storageFolder, revision, commitHash);
+            CacheCommitHashForSpecificVersion(storageFolder!, revision!, commitHash!);
 
             if(File.Exists(pointerPath) && !forceDownload)
             {
                 if(localDir is not null){
-                    return ToLocalDir(pointerPath, localDir, relativeFilename, localDirUseSymlinks);
+                    return ToLocalDir(pointerPath, localDir, relativeFilename!, localDirUseSymlinks);
                 }
                 return pointerPath;
             }
 
             if(File.Exists(blobPath) && !forceDownload){
                 if(localDir is not null){ // we have the blob already, but not the pointer
-                    return ToLocalDir(blobPath, localDir, relativeFilename, localDirUseSymlinks);
+                    return ToLocalDir(blobPath, localDir, relativeFilename!, localDirUseSymlinks);
                 }
                 else{ // or in snapshot cache
                     CreateSymlink(blobPath, pointerPath, newBlob: false);
@@ -237,13 +242,23 @@ namespace Huggingface
                 // If the download just completed while the lock was activated.
                 if(File.Exists(pointerPath) && !forceDownload){
                     if(localDir is not null){
-                        return ToLocalDir(pointerPath, localDir, relativeFilename, localDirUseSymlinks);
+                        return ToLocalDir(pointerPath, localDir, relativeFilename!, localDirUseSymlinks);
                     }
                     return pointerPath;
                 }
 
-                // TODO: resume download
+                long resumeSize = 0;
                 var tempFilePath = Path.GetTempFileName();
+                if (resumeDownload)
+                {
+                    tempFilePath = blobPath + ".incomplete";
+                    if(File.Exists(tempFilePath))
+                    {
+                        resumeSize = new FileInfo(tempFilePath).Length;
+                    }
+                }
+
+                // TODO: resume download
                 Logger?.LogInformation($"Downloading {url} to {tempFilePath}...");
                 if(expectedSize is not null){
                     // Check tmp path
@@ -255,50 +270,10 @@ namespace Huggingface
                         CheckDiskSpace(expectedSize.Value, localDir);
                     }
                 }
-
-                // download the file
-                var handler = new HttpClientHandler();
-                if(proxy is not null){
-                    handler.Proxy = new System.Net.WebProxy(proxy);
-                    handler.UseProxy = true;
-                }
-                handler.AllowAutoRedirect = true;
-                handler.MaxAutomaticRedirections = 30;
-                handler.UseCookies = true;
-                
-                var client = new System.Net.Http.HttpClient(handler);
-                client.Timeout = TimeSpan.FromSeconds(etagTimeout);
-                
-                uriToDownload = new Uri(
-                    "https://cdn-lfs-us-1.hf-mirror.com/repos/ea/97/ea977a9e305f5c588e951a1d21890912ca7f717791542be17f8d8af1b29bb751/de0b0d5814764dcf7b8363c0c18aee9f51045ac8f3265b1d44a3bbfe0bd0bf12?response-content-disposition=attachment%3B+filename*%3DUTF-8%27%27pytorch_model.bin%3B+filename%3D%22pytorch_model.bin%22%3B&response-content-type=application%2Foctet-stream&Expires=1713812955&Policy=eyJTdGF0ZW1lbnQiOlt7IkNvbmRpdGlvbiI6eyJEYXRlTGVzc1RoYW4iOnsiQVdTOkVwb2NoVGltZSI6MTcxMzgxMjk1NX19LCJSZXNvdXJjZSI6Imh0dHBzOi8vY2RuLWxmcy11cy0xLmh1Z2dpbmdmYWNlLmNvL3JlcG9zL2VhLzk3L2VhOTc3YTllMzA1ZjVjNTg4ZTk1MWExZDIxODkwOTEyY2E3ZjcxNzc5MTU0MmJlMTdmOGQ4YWYxYjI5YmI3NTEvZGUwYjBkNTgxNDc2NGRjZjdiODM2M2MwYzE4YWVlOWY1MTA0NWFjOGYzMjY1YjFkNDRhM2JiZmUwYmQwYmYxMj9yZXNwb25zZS1jb250ZW50LWRpc3Bvc2l0aW9uPSomcmVzcG9uc2UtY29udGVudC10eXBlPSoifV19&Signature=fpmNACaWLQKhZxMoHHsLzsAUm3%7E52LVWfPTl3zmYuF9l%7EhRObn169YtB1GZh814qm%7Ego%7Ezx7VqKoqUuIWQfR8gwoR7jTF%7EDcW6Q4GMArJoqrK7MWvZ7VFdsCqjAdPULV02MAyZGXljWuKOXZ5CKH61FR8IWddq9okqfLWTJTgqKfrGwfzJqrkEEN2SO35hHmnwTcyEG0hk0TR-gwMaUIFRnaFarzIzRYX7u2MToJUHguuB1RCDRvP4DJk0IQ2Reszb5xrSPaGioG50kjN%7EDna2Nn6hnWGZQRJA5Ugn1gSSL7%7EnHHY9hXdxitRsnC%7EMyVqEuwdpBI4B6M-6M02--OCQ__&Key-Pair-Id=KCD77M1F0VK2B");
-                using (var request = new HttpRequestMessage(HttpMethod.Get, uriToDownload)){
-                    Utils.AddDefaultHeaders(request.Headers);
-                    foreach(var k in headers.Keys){
-                        // request.Headers.TryAddWithoutValidation(k, headers[k]);
-                        request.Headers.TryAddWithoutValidation("User-Agent", new string[]{"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"});
-                    }
-                    using (var response = await Utils.HttpRequestWrapperAsync(client, request, false, true)){
-                        response.EnsureSuccessStatusCode();
-                        Debug.Assert(response.Headers.TryGetValues("Content-Length", out var lengths));
-                        Debug.Assert(lengths is not null && lengths!.Count() > 0);
-                        var totalFileLengths = int.Parse(lengths!.FirstOrDefault());
-                        var chunkSize = Math.Max(HFGlobalConfig.MinFileDownloadChunkSize, totalFileLengths / 100);
-                        using (var responseStream = await response.Content.ReadAsStreamAsync())
-                        using (var stream = new FileStream(tempFilePath, FileMode.Create, FileAccess.Write, FileShare.None))
-                        {
-                            byte[] buffer = new byte[chunkSize];
-                            int bytesRead;
-                            long totalRead = 0;
-
-                            while ((bytesRead = await responseStream.ReadAsync(buffer, 0, chunkSize)) > 0)
-                            {
-                                await stream.WriteAsync(buffer, 0, bytesRead);
-                                totalRead += bytesRead;
-                                progress?.Report((float)totalRead / totalFileLengths);
-                            }
-                        }
-                        Console.WriteLine("Download completed!!");
-                    }
+                var client = GetClientForFileDownload(proxy);
+                using(var fs = new FileStream(tempFilePath, FileMode.Create, FileAccess.Write, FileShare.None))
+                {
+                    await HttpDownloadWithStreamAsync(client, uriToDownload, fs, proxy, resumeSize, headers, expectedSize is null ? -1 : expectedSize.Value, progress: progress);
                 }
 
                 if(localDir is null){
@@ -308,7 +283,7 @@ namespace Huggingface
                 }
                 else{
                     var localDirFilepath = Path.Combine(localDir, relativeFilename);
-                    Directory.CreateDirectory(Directory.GetParent(localDirFilepath).FullName);
+                    Directory.CreateDirectory(Directory.GetParent(localDirFilepath)!.FullName);
 
                     bool isBigFile = new FileInfo(tempFilePath).Length > HFGlobalConfig.LocalDirAutoSymlinkThreshold;
                     if((localDirUseSymlinks is not null && localDirUseSymlinks.Value) || (localDirUseSymlinks is null && isBigFile)){
@@ -337,6 +312,112 @@ namespace Huggingface
         }
 
         /// <summary>
+        /// Download a remote file. Do not gobble up errors, and will return errors tailored to the Hugging Face Hub.
+        /// </summary>
+        /// <param name="client"></param>
+        /// <param name="uri"></param>
+        /// <param name="fs"></param>
+        /// <param name="proxy"></param>
+        /// <param name="resumeSize"></param>
+        /// <param name="headers"></param>
+        /// <param name="expectedSize"></param>
+        /// <param name="retryLeft"></param>
+        /// <param name="progress"></param>
+        private static async Task HttpDownloadWithStreamAsync(HttpClient client, Uri uri, FileStream fs, string? proxy = null, long resumeSize = 0, 
+            IDictionary<string, string>? headers = null, long expectedSize = -1, int retryLeft = 5, IProgress<int>? progress = null)
+        {
+            using (var request = new HttpRequestMessage(HttpMethod.Get, uri))
+            {
+                //Utils.AddDefaultHeaders(request.Headers);
+                if(headers is not null)
+                {
+                    foreach (var k in headers.Keys)
+                    {
+                        request.Headers.TryAddWithoutValidation(k, headers[k]);
+                    }
+                }
+                if(resumeSize > 0)
+                {
+                    request.Headers.TryAddWithoutValidation("Range", $"bytes={resumeSize}-");
+                }
+                using (var response = await Utils.HttpRequestWrapperAsync(client, request, false, true))
+                {
+                    response.EnsureSuccessStatusCode();
+                    Debug.Assert(response.Content.Headers.TryGetValues("Content-Length", out var lengths));
+                    Debug.Assert(lengths is not null && lengths!.Count() > 0);
+                    // NOTE: 'total' is the total number of bytes to download, not the number of bytes in the file.
+                    // If the file is compressed, the number of bytes in the saved file will be higher than 'total'.
+                    if(long.TryParse(lengths!.First(), out var totalFileLengths))
+                    {
+                        totalFileLengths += resumeSize;
+                    }
+                    else
+                    {
+                        totalFileLengths = -1;
+                    }
+                    var newResumeSize = resumeSize;
+
+                    var chunkSize = HFGlobalConfig.DownloadChunkSize;
+                    var pieces = totalFileLengths / chunkSize;
+                    using (var responseStream = await response.Content.ReadAsStreamAsync())
+                    {
+                        byte[] buffer = new byte[chunkSize];
+                        int bytesRead;
+
+                        try
+                        {
+                            while ((bytesRead = await responseStream.ReadAsync(buffer, 0, chunkSize)) > 0)
+                            {
+                                await fs.WriteAsync(buffer, 0, bytesRead);
+                                newResumeSize += bytesRead;
+                                progress?.Report((int)(newResumeSize * pieces / totalFileLengths));
+                                // Some data has been downloaded from the server so we reset the number of retries.
+                                retryLeft = 5;
+                            }
+                        }
+                        catch(IOException ex)
+                        {
+                            if(retryLeft < 0)
+                            {
+                                Logger?.LogWarning($"Error while downloading from {uri.AbsoluteUri}: {ex.Message}\nMax retries exceeded.");
+                                throw new HttpRequestException(ex.Message);
+                            }
+                            Logger?.LogWarning($"Error while downloading from {uri.AbsoluteUri}: {ex.Message}\nTrying to resume download...");
+                            Thread.Sleep(1000);
+                            // In case of SSLError it's best to reset the client.
+                            await HttpDownloadWithStreamAsync(GetClientForFileDownload(proxy), uri, fs, proxy, newResumeSize, headers, expectedSize, retryLeft - 1, progress);
+                            return;
+                        }
+                    }
+
+                    if(expectedSize != -1 && expectedSize != fs.Position)
+                    {
+                        throw new Exception();
+                    }
+                }
+            }
+        }
+
+        private static HttpClient GetClientForFileDownload(string? proxy = null)
+        {
+            // download the file
+            var handler = new HttpClientHandler();
+            if (proxy is not null)
+            {
+                handler.Proxy = new System.Net.WebProxy(proxy);
+                handler.UseProxy = true;
+            }
+            handler.AllowAutoRedirect = true;
+            handler.UseDefaultCredentials = true;
+            //handler.MaxAutomaticRedirections = 30;
+            //handler.UseCookies = true;
+
+            var client = new System.Net.Http.HttpClient(handler);
+            client.Timeout = TimeSpan.FromSeconds(HFGlobalConfig.DefaultDownloadTimeout);
+            return client;
+        }
+
+        /// <summary>
         /// Fetch metadata of a file versioned on the Hub for a given url.
         /// </summary>
         /// <param name="url"></param>
@@ -362,7 +443,7 @@ namespace Huggingface
             string? commitHash = null;
             System.Net.Http.Headers.EntityTagHeaderValue? etag = null;
             Uri? location;
-            int? size = null;
+            long? size = null;
 
             using(var request = new HttpRequestMessage(HttpMethod.Head, uri)){
                 foreach(var header in headers)
@@ -371,22 +452,23 @@ namespace Huggingface
                 }
 
                 var response = await Utils.HttpRequestWrapperAsync(client, request, true);
-                Debug.Assert(response.Headers is not null);
+                Debug.Assert(response is not null);
+                Debug.Assert(response!.Headers is not null);
 
-                response.Headers.TryGetValues(HFGlobalConfig.HUGGINGFACE_HEADER_X_REPO_COMMIT, out var commitHashes);
+                response!.Headers!.TryGetValues(HFGlobalConfig.HUGGINGFACE_HEADER_X_REPO_COMMIT, out var commitHashes);
                 commitHash = commitHashes?.FirstOrDefault();
                 if(!response.Headers.TryGetValues(HFGlobalConfig.HUGGINGFACE_HEADER_X_LINKED_ETAG, out var etags)){
                     etag = response.Headers.ETag; 
                 } else{
                     etag = new System.Net.Http.Headers.EntityTagHeaderValue(etags.First());
                 }
-                location = response.Headers.Location ?? response.RequestMessage.RequestUri;
+                location = response.Headers.Location ?? response.RequestMessage!.RequestUri;
                 response.Headers.TryGetValues(HFGlobalConfig.HUGGINGFACE_HEADER_X_LINKED_SIZE, out var sizes);
                 if(sizes is not null && sizes.Count() > 0){
-                    size = int.Parse(sizes.First());
+                    size = long.Parse(sizes.First());
                 }
                 if(size is null && response.Headers.TryGetValues("Content-Length", out sizes)){
-                    size = int.Parse(sizes.First());
+                    size = long.Parse(sizes.First());
                 }
             }
 
@@ -440,7 +522,7 @@ namespace Huggingface
         private static void CacheCommitHashForSpecificVersion(string storageFolder, string revision, string commitHash){
             if(revision != commitHash){
                 var refPath = Path.Combine(storageFolder, "refs", revision);
-                Directory.CreateDirectory(Directory.GetParent(refPath).FullName);
+                Directory.CreateDirectory(Directory.GetParent(refPath)!.FullName);
                 if(!File.Exists(refPath) || commitHash != File.ReadAllText(refPath).Trim()){
                     File.WriteAllText(refPath, commitHash);
                 }
@@ -452,7 +534,7 @@ namespace Huggingface
         /// </summary>
         /// <param name="expectedSize"></param>
         /// <param name="targetDir"></param>
-        private static void CheckDiskSpace(int expectedSize, string targetDir){
+        private static void CheckDiskSpace(long expectedSize, string targetDir){
             var drive = new DriveInfo(Directory.GetDirectoryRoot(targetDir));
             if(drive.AvailableFreeSpace < expectedSize){
                 Logger?.LogWarning($"Not enough disk space to download the file: {expectedSize} bytes are needed, but only {drive.AvailableFreeSpace} bytes are available.");
@@ -505,10 +587,11 @@ namespace Huggingface
                 throw new Exception($"Cannot copy file '{relativeFilename}' to local dir '{localDir}': " + 
                 "file would not be in the local directory.");
             }
-            Directory.CreateDirectory(Directory.GetParent(localDirFilepath).FullName);
+            Directory.CreateDirectory(Directory.GetParent(localDirFilepath)!.FullName);
 
 #if NET6_0_OR_GREATER
-            string realBlobPath = File.ResolveLinkTarget(path, true).LinkTarget;
+            string? realBlobPath = File.ResolveLinkTarget(path, true)?.LinkTarget;
+            realBlobPath ??= path;
             Debug.Assert(realBlobPath is not null);
             if(useSymlinks is null){
                 useSymlinks = new FileInfo(realBlobPath).Length > HFGlobalConfig.LocalDirAutoSymlinkThreshold;
@@ -536,7 +619,7 @@ namespace Huggingface
 
             var absSrc = Path.GetFullPath(src);
             var absDst = Path.GetFullPath(dst);
-            var absDstFolder = Directory.GetParent(absDst).FullName;
+            var absDstFolder = Directory.GetParent(absDst)!.FullName;
 
             string? relativeSrc;
             // Use relative_dst in priority
@@ -569,7 +652,7 @@ namespace Huggingface
                         return;
                     }
                     else{
-                        throw ex;
+                        throw new Exception($"Got an error when creating symlinks: {ex.Message}");
                     }
                 }
             }
@@ -607,7 +690,7 @@ namespace Huggingface
                     // create a temp file
                     File.WriteAllText(srcPath, string.Empty);
                     // try to create symlink
-                    string relativeSrcPath = Utils.GetRelativePath(Path.GetDirectoryName(dstPath), srcPath);
+                    string relativeSrcPath = Utils.GetRelativePath(Path.GetDirectoryName(dstPath)!, srcPath);
                     bool symlinkCreated = File.CreateSymbolicLink(dstPath, relativeSrcPath).Exists;
                     File.Delete(srcPath);
                     Directory.Delete(tempDirectoryPath); 

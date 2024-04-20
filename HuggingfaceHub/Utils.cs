@@ -3,6 +3,7 @@ using System.Text.RegularExpressions;
 using System.Collections.Specialized;
 using System.Net.Http.Headers;
 using System.Web;
+using System.Diagnostics;
 
 namespace Huggingface
 {
@@ -139,6 +140,7 @@ namespace Huggingface
                         if (Uri.IsWellFormedUriString(location, UriKind.Relative))
                         {
                             var baseUri = request.RequestUri;
+                            Debug.Assert(baseUri is not null);
                             var nextUrl = new Uri(baseUri, location).ToString();
 
                             var newRequest = new HttpRequestMessage(request.Method, nextUrl);
@@ -152,7 +154,7 @@ namespace Huggingface
 
             if (isStream)
             {
-                return await client.SendAsync(request, HttpCompletionOption.ResponseContentRead);
+                return await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
             }
             else
             {

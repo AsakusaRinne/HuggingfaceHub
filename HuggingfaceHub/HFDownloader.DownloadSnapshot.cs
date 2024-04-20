@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Huggingface.Common;
+using HuggingfaceHub;
 using Microsoft.Extensions.Logging;
 
 namespace Huggingface
@@ -66,7 +67,7 @@ namespace Huggingface
             IDictionary<string, string>? userAgent = null, bool forceDownload = false, 
             string? proxy = null, int etagTimeout = -1, string? token = null, bool localFilesOnly = false, 
             string[]? allowPatterns = null, string[]? ignorePatterns = null, int maxWorkers = 8, 
-            IProgress<float>? progress = null, string? endpoint = null){
+            IGroupedProgress? progress = null, string? endpoint = null){
             if(cacheDir is null){
                 cacheDir = HFGlobalConfig.DefaultCacheDir;
             }
@@ -74,7 +75,7 @@ namespace Huggingface
                 revision = "main";
             }
             // Currently we only support model type repo.
-            string repoType = "main";
+            string repoType = "model";
 
             var storageFolder = Path.Combine(cacheDir, RepoFolderName(repoId, repoType));
 
@@ -142,10 +143,10 @@ namespace Huggingface
             // At this stage, internet connection is up and running
             // => let's download the files!
             Debug.Assert(repoInfo is not null);
-            Debug.Assert(repoInfo.Sha is not null, "Repo info returned from server must have a revision sha.");
-            Debug.Assert(repoInfo.Siblings is not null, "Repo info returned from server must have a siblings list.");
-            var filteredRepoFiles = Utils.FilterRepoObjects(repoInfo.Siblings.Select(f => f.Filename), allowPatterns, ignorePatterns);
-            commitHash = repoInfo.Sha;
+            Debug.Assert(repoInfo!.Sha is not null, "Repo info returned from server must have a revision sha.");
+            Debug.Assert(repoInfo!.Siblings is not null, "Repo info returned from server must have a siblings list.");
+            var filteredRepoFiles = Utils.FilterRepoObjects(repoInfo!.Siblings.Select(f => f.Filename), allowPatterns, ignorePatterns);
+            commitHash = repoInfo!.Sha;
             snapshotFolder = Path.Combine(storageFolder, "snapshots", commitHash);
             // if passed revision is not identical to commit_hash
             // then revision has to be a branch name or tag name.
@@ -159,59 +160,70 @@ namespace Huggingface
             // we pass the commit_hash to hf_hub_download
             // so no network call happens if we already
             // have the file locally.
-
-            int completedTasks = 0;
             int totalTasks = filteredRepoFiles.Count();
-            foreach (var filename in filteredRepoFiles)
+            if(Logger is not null)
             {
-                Console.WriteLine($"Filtered file: {filename}");
+                foreach (var filename in filteredRepoFiles)
+                {
+                    Logger.LogDebug($"Filtered file when downloading snapshot: {filename}");
+                }
             }
             if(totalTasks > 0){
-                foreach (var repoFilename in filteredRepoFiles)
+#if NET6_0_OR_GREATER
+                await Parallel.ForEachAsync(filteredRepoFiles, new ParallelOptions() { MaxDegreeOfParallelism = maxWorkers }, async (repoFilename, state) =>
                 {
+                    var singleProgress = progress is null ? null : new ProgressForGrouping(repoFilename, progress);
+
                     var res = await DownloadFileAsync(repoId, repoFilename, revision: revision, cacheDir: cacheDir, localDir: localDir,
                         localDirUseSymlinks: localDirUseSymlinks, userAgent: userAgent, forceDownload: forceDownload,
-                        proxy: proxy, etagTimeout: etagTimeout, token: token, endpoint: endpoint);
-                    
-                    Console.WriteLine($"Downloaded {res}");
+                        proxy: proxy, etagTimeout: etagTimeout, token: token, endpoint: endpoint, progress: singleProgress);
+
+                    if (res is null)
+                    {
+                        throw new Exception($"Got an error when downloading file {repoFilename}");
+                    }
+                    Logger?.LogDebug($"[Snapshot Download] Completed downloading {res}");
+                });
+#else
+                // TODO: parallel downloading in netstandard2.0
+                foreach (var repoFilename in filteredRepoFiles)
+                {
+                    var singleProgress = progress is null ? null : new ProgressForGrouping(repoFilename, progress);
+
+                    var res = await DownloadFileAsync(repoId, repoFilename, revision: revision, cacheDir: cacheDir, localDir: localDir,
+                        localDirUseSymlinks: localDirUseSymlinks, userAgent: userAgent, forceDownload: forceDownload,
+                        proxy: proxy, etagTimeout: etagTimeout, token: token, endpoint: endpoint, progress: singleProgress);
 
                     if (res is null)
                     {
                         throw new Exception($"Got error when downloading file {repoFilename}");
                     }
-                    if (progress is not null)
-                    {
-                        Interlocked.Increment(ref completedTasks);
-                        progress.Report((float)completedTasks / totalTasks);
-                    }
+                    Logger?.LogDebug($"[Snapshot Download] Completed downloading {res}");
                 }
-                
-                // Parallel.ForEach(filteredRepoFiles, new ParallelOptions() { MaxDegreeOfParallelism = maxWorkers }, async (repoFilename, state) =>
-                // {
-                //     var res = await DownloadFileAsync(repoId, repoFilename, revision: revision, cacheDir: cacheDir, localDir: localDir,
-                //         localDirUseSymlinks: localDirUseSymlinks, userAgent: userAgent, forceDownload: forceDownload,
-                //         proxy: proxy, etagTimeout: etagTimeout, token: token, endpoint: endpoint);
-                //     
-                //     Console.WriteLine($"Downloaded {res}");
-                //
-                //     if (res is null)
-                //     {
-                //         throw new Exception($"Got error when downloading file {repoFilename}");
-                //     }
-                //     if (progress is not null)
-                //     {
-                //         Interlocked.Increment(ref completedTasks);
-                //         progress.Report((float)completedTasks / totalTasks);
-                //     }
-                // });
+#endif
             }
 
 #if NET6_0_OR_GREATER
-            if(localDir is not null){
+            if (localDir is not null){
                 return new DirectoryInfo(localDir).LinkTarget!;
             }
 #endif
             return snapshotFolder;
+        }
+
+        class ProgressForGrouping: IProgress<int>
+        {
+            private string _filename;
+            private IGroupedProgress _groupedProgress;
+            public ProgressForGrouping(string filename, IGroupedProgress groupedProgress)
+            {
+                _filename = filename;
+                _groupedProgress = groupedProgress;
+            }
+            public void Report(int value)
+            {
+                _groupedProgress.Report(_filename, value);
+            }
         }
     }
 }

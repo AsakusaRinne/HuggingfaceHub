@@ -6,6 +6,6 @@ namespace Huggingface.Common
         string? CommitHash, 
         EntityTagHeaderValue? Etag, 
         Uri? Location, 
-        int? Size
+        long? Size
     );
 }
