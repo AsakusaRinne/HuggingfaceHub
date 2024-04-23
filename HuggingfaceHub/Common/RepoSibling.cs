@@ -1,6 +1,6 @@
 using Newtonsoft.Json;
 
-namespace Huggingface.Common
+namespace HuggingfaceHub.Common
 {
     /// <summary>
     /// Contains basic information about a repo file inside a repo on the Hub.

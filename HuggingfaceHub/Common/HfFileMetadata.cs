@@ -1,6 +1,6 @@
 using System.Net.Http.Headers;
 
-namespace Huggingface.Common
+namespace HuggingfaceHub.Common
 {
     public record class HfFileMetadata(
         string? CommitHash, 

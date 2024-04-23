@@ -1,6 +1,5 @@
-﻿using Huggingface;
+﻿using HuggingfaceHub;
 using Microsoft.Extensions.Logging;
-using HuggingfaceHub;
 
 //HFGlobalConfig.EndPoint = "https://hf-mirror.com";
 using var factory = LoggerFactory.Create(builder => builder.AddConsole().SetMinimumLevel(LogLevel.Information));
@@ -11,18 +10,18 @@ HFDownloader.Logger = factory.CreateLogger("HFDownloader");
 //var path = await HFDownloader.DownloadFileAsync("mrm8488/bert-tiny-finetuned-sms-spam-detection", "model.safetensors");
 //Console.WriteLine($"### Saved to {path}");
 
-var res = await HFDownloader.DownloadSnapshotAsync("Bingsu/vitB32_bert_ko_small_clip", "main", maxWorkers: 4, progress: new GroupedConsoleProgress());
+//var res = await HFDownloader.DownloadSnapshotAsync("Bingsu/vitB32_bert_ko_small_clip", "main", localDir: "D:\\development\\llama\\weights\\temp", maxWorkers: 4, progress: new GroupedConsoleProgress());
 
 
-//var res = await HFDownloader.DownloadFileAsync("magicslabnu/clip_vit_small_patch16_224", "pytorch_model.bin", progress:new ConsoleProgress());
+var res = await HFDownloader.DownloadFileAsync("AsakusaRinne/LLamaSharpNative", "runtimes/win-x64/native/cuda11/llama.dll", revision: "f7001c", progress: new ConsoleProgress());
 
 Console.WriteLine($"### Saved to {res}");
 
-class ConsoleProgress : IProgress<float>
+class ConsoleProgress : IProgress<int>
 {
-    public void Report(float value)
+    public void Report(int value)
     {
-        Console.WriteLine($"{value * 100}%");
+        Console.WriteLine($"{value}%");
     }
 }
 

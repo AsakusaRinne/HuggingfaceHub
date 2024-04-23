@@ -1,7 +1,7 @@
 using System.Net;
 using System.Text.RegularExpressions;
 
-namespace Huggingface
+namespace HuggingfaceHub
 {
     public static class HFGlobalConfig
     {

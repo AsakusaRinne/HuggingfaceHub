@@ -1,6 +1,6 @@
 using Newtonsoft.Json;
 
-namespace Huggingface.Common
+namespace HuggingfaceHub.Common
 {
     /// <summary>
     /// Contains information about a model on the Hub.

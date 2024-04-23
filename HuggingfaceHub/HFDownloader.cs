@@ -2,7 +2,7 @@ using System.Net;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
 
-namespace Huggingface
+namespace HuggingfaceHub
 {
     public static partial class HFDownloader
     {

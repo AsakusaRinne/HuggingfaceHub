@@ -3,10 +3,10 @@ using System.Net;
 using System.Net.Http;
 using System.Web;
 using System.Collections.Specialized;
-using Huggingface.Common;
+using HuggingfaceHub.Common;
 using Newtonsoft.Json;
 
-namespace Huggingface
+namespace HuggingfaceHub
 {
     public partial class HFDownloader
     {

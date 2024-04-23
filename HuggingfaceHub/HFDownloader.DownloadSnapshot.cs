@@ -1,8 +1,8 @@
 using System.Diagnostics;
-using Huggingface.Common;
+using HuggingfaceHub.Common;
 using Microsoft.Extensions.Logging;
 
-namespace Huggingface
+namespace HuggingfaceHub
 {
     public partial class HFDownloader
     {

@@ -1,11 +1,11 @@
 using System.Runtime.InteropServices;
 using System.Diagnostics;
 using System.Collections.Concurrent;
-using Huggingface.Common;
+using HuggingfaceHub.Common;
 using Microsoft.Extensions.Logging;
 using System.IO;
 
-namespace Huggingface
+namespace HuggingfaceHub
 {
     
     public partial class HFDownloader

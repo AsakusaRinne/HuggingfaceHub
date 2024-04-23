@@ -5,7 +5,7 @@ using System.Net.Http.Headers;
 using System.Web;
 using System.Diagnostics;
 
-namespace Huggingface
+namespace HuggingfaceHub
 {
     internal static class Utils
     {

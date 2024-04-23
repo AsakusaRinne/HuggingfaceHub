@@ -9,7 +9,7 @@
 
     <Platforms>AnyCPU;x64;Arm64</Platforms>
     <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
-    <Version>0.1.1</Version>
+    <Version>0.1.2</Version>
     <Authors>Rinne</Authors>
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
     <RepositoryUrl>https://github.com/AsakusaRinne/HuggingfaceHub</RepositoryUrl>
