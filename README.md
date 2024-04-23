@@ -1,6 +1,7 @@
-A library to download models & files from HuggingFace with C#.
 
-*This library is under development. Some features have been completed but hey haven't been well tested. If you have any problem when running it from source, please open an issue to tell us.*
+[![HuggingfaceHub Badge](https://img.shields.io/nuget/v/HuggingfaceHub?label=HuggingfaceHub)](https://www.nuget.org/packages/HuggingfaceHub)
+
+**A library to download models & files from HuggingFace with C#.**
 
 ## Key features
 
@@ -11,6 +12,20 @@ A library to download models & files from HuggingFace with C#.
 - [x] Parallel download multiple files (only in .NET 6 or higher).
 - [ ] Upload files.
 - [ ] Support repo types other than model.
+
+## Installation
+
+```cs
+PM> Install-Package HuggingfaceHub
+```
+
+or
+
+```cs
+dotnet add package <your_project> HuggingfaceHub
+```
+
+or search `HuggingfaceHub` in the nuget manager tool of Visual Studio.
 
 ## Usage
 
