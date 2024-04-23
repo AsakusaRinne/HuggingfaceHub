@@ -87,7 +87,7 @@ namespace Huggingface
             // shortcut everything.
             if(HFGlobalConfig.CommitHashRegex.IsMatch(revision)){
                 pointerPath = GetPointerPath(storageFolder, revision, relativeFilename);
-#if NET6_0_OR_GREATER
+#if NET7_0_OR_GREATER
                 if(Path.Exists(pointerPath)){
 #else
                 if(File.Exists(pointerPath)){
@@ -615,7 +615,11 @@ namespace Huggingface
             try{
                 File.Delete(dst);
             }
-            catch (Exception) { }
+            catch (Exception)
+            {
+                Logger?.LogWarning(dst + " already exists and cannot be overwritten. Skipped the file copy.");
+                return;
+            }
 
             var absSrc = Path.GetFullPath(src);
             var absDst = Path.GetFullPath(dst);

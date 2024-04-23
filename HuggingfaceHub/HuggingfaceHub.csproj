@@ -3,10 +3,30 @@
   <PropertyGroup>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <TargetFrameworks>net7.0;netstandard2.0</TargetFrameworks>
+    <TargetFrameworks>net6;net7;net8;netstandard2.0</TargetFrameworks>
     <LangVersion>12</LangVersion>
     <GenerateRuntimeConfigurationFiles>true</GenerateRuntimeConfigurationFiles>
+
+    <Platforms>AnyCPU;x64;Arm64</Platforms>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+    <Version>0.1.1</Version>
+    <Authors>Rinne</Authors>
+    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+    <RepositoryUrl>https://github.com/AsakusaRinne/HuggingfaceHub</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageTags>Huggingface, Model, Download</PackageTags>
+    <PackageIconUrl>https://avatars.githubusercontent.com/u/25720743?s=200&amp;v=4</PackageIconUrl>
+    <Description>
+      HuggingfaceHub is a library to download models and files from Huggingface in .NET.
+    </Description>
+    <PackageOutputPath>packages</PackageOutputPath>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <GenerateDocumentationFile>True</GenerateDocumentationFile>
   </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="..\README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />

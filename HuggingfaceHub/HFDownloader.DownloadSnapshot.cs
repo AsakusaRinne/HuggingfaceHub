@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using Huggingface.Common;
-using HuggingfaceHub;
 using Microsoft.Extensions.Logging;
 
 namespace Huggingface

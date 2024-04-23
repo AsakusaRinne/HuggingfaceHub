@@ -4,7 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace HuggingfaceHub
+namespace Huggingface
 {
     /// <summary>
     /// Progress callback when downloading multiple files
