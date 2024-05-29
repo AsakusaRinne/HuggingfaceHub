@@ -488,7 +488,7 @@ namespace HuggingfaceHub
             string? revision = null, string? endpoint = null)
         {
             if(!string.IsNullOrEmpty(subfolder)){
-                subfolder = $"{subfolder}/{filename}";
+                filename = $"{subfolder}/{filename}";
             }
             if(revision is null){
                 revision = HFGlobalConfig.DefaultRevision;
